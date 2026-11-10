@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ultimate Tic-Tac-Toe</title>
+<style>
+  :root {
+    --bg1: #f6f7fb; --bg2: #e4e9f3;
+    --panel: #ffffff; --grid: #dbe1ec; --cell: #f8fafc; --hover: #e6eeff;
+    --overlay: rgba(255,255,255,.9);
+    --text: #1e2330; --muted: #6b7280;
+    --x: #2563eb; --o: #e11d48; --accent: #f59e0b; --glow: rgba(245,158,11,.35);
+    --win: #bbf7d0; --shadow: 0 10px 30px rgba(15,23,42,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg1: #0d1117; --bg2: #161b26;
+      --panel: #171c27; --grid: #2a3142; --cell: #1d2330; --hover: #262e40;
+      --overlay: rgba(23,28,39,.9);
+      --text: #e6e9f2; --muted: #8b93a7;
+      --x: #60a5fa; --o: #fb7185; --accent: #fbbf24; --glow: rgba(251,191,36,.3);
+      --win: #14532d; --shadow: 0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    background: linear-gradient(160deg, var(--bg1), var(--bg2));
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .app {
+    width: 100%; max-width: 600px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+
+  header { text-align: center; animation: fadeDown .6s ease both; }
+  h1 { margin: 0; font-size: clamp(1.3rem, 4.5vw, 1.9rem); font-weight: 800; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+
+  /* Scoreboard */
+  .scoreboard {
+    width: min(92vw, 560px);
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px;
+  }
+  .score {
+    background: var(--panel); border-radius: 14px; box-shadow: var(--shadow);
+    padding: 10px 8px; display: flex; flex-direction: column; align-items: center;
+    border: 2px solid transparent; transition: border-color .25s, transform .25s, opacity .25s;
+  }
+  .score .name { font-weight: 800; font-size: clamp(1.1rem, 4vw, 1.5rem); }
+  .score .count { font-size: .8rem; color: var(--muted); }
+  .score.X .name { color: var(--x); }
+  .score.O .name { color: var(--o); }
+  .score.draw .name { color: var(--muted); font-size: clamp(.95rem, 3.5vw, 1.2rem); }
+  .score.turn { border-color: currentColor; transform: translateY(-2px); }
+  .score.X.turn { border-color: var(--x); }
+  .score.O.turn { border-color: var(--o); }
+
+  /* Status line */
+  #status {
+    min-height: 1.6em; font-weight: 700; text-align: center; font-size: .98rem;
+    transition: color .2s;
+  }
+  #status.X { color: var(--x); }
+  #status.O { color: var(--o); }
+
+  /* Board */
+  .wrap {
+    position: relative; width: min(92vw, 560px); aspect-ratio: 1;
+    animation: fadeUp .6s ease both .1s;
+  }
+  #board {
+    position: absolute; inset: 0;
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    gap: 1.2%;
+  }
+  .big {
+    position: relative; display: grid;
+    grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    gap: 2px; padding: 4px; border-radius: 12px;
+    background: var(--grid); box-shadow: var(--shadow);
+    transition: opacity .35s, box-shadow .35s;
+  }
+  .big.dim { opacity: .45; }
+  .big.active { animation: glow 1.8s ease-in-out infinite; }
+  .big.draw { opacity: .6; }
+
+  .cell {
+    background: var(--cell); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(14px, 5.5vw, 40px); font-weight: 800; line-height: 1;
+    transition: background .15s;
+  }
+  .cell.x { color: var(--x); }
+  .cell.o { color: var(--o); }
+  .big.active .cell.empty:hover { background: var(--hover); cursor: pointer; }
+  .cell.win { background: var(--win); }
+  .cell.last { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell.pop { animation: pop .35s cubic-bezier(.2, 1.5, .4, 1); }
+
+  .big.won-X::after, .big.won-O::after, .big.draw::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--overlay); pointer-events: none;
+    font-size: clamp(40px, 13vw, 120px); font-weight: 900;
+    animation: pop .45s cubic-bezier(.2, 1.5, .4, 1);
+  }
+  .big.won-X::after { content: 'X'; color: var(--x); }
+  .big.won-O::after { content: 'O'; color: var(--o); }
+  .big.draw::after  { content: '–'; color: var(--muted); }
+
+  #strike {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+  #strike line {
+    stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round;
+    stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .6s ease;
+    filter: drop-shadow(0 0 4px var(--glow));
+  }
+  #strike line.on { stroke-dashoffset: 0; }
+
+  /* Controls */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center;
+  }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; user-select: none; }
+  .toggle input {
+    appearance: none; width: 42px; height: 24px; margin: 0; border-radius: 12px;
+    background: var(--grid); position: relative; cursor: pointer; transition: background .2s;
+  }
+  .toggle input::after {
+    content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    transition: transform .2s;
+  }
+  .toggle input:checked { background: var(--accent); }
+  .toggle input:checked::after { transform: translateX(18px); }
+
+  button {
+    font: inherit; font-weight: 700; font-size: .9rem; cursor: pointer;
+    padding: 9px 16px; border-radius: 10px; border: none;
+    background: var(--text); color: var(--panel);
+    box-shadow: var(--shadow); transition: transform .15s, filter .15s;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:active { transform: scale(.96); }
+  button.ghost { background: var(--panel); color: var(--text); }
+
+  .hint { margin: 0; font-size: .82rem; color: var(--muted); text-align: center; max-width: 480px; line-height: 1.5; }
+
+  /* Animations */
+  @keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes fadeDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--glow); }
+    50%      { box-shadow: 0 0 0 2px var(--accent), 0 0 22px var(--glow); }
+  }
+
+  @media (max-width: 420px) {
+    .scoreboard { gap: 6px; }
+    .score { padding: 8px 4px; }
+    .controls { gap: 8px; }
+    button { padding: 8px 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>Ultimate <span>Tic-Tac-Toe</span></h1>
+    <p class="sub">Nine boards inside one board. Win the big picture.</p>
+  </header>
+
+  <section class="scoreboard" aria-label="Scores">
+    <div class="score X" id="cardX"><span class="name">X</span><span class="count" id="countX">0 wins</span></div>
+    <div class="score draw" id="cardD"><span class="name">Draws</span><span class="count" id="countD">0</span></div>
+    <div class="score O" id="cardO"><span class="name">O</span><span class="count" id="countO">0 wins</span></div>
+  </section>
+
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <div class="wrap">
+    <div id="board"></div>
+    <svg id="strike" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <line id="strikeLine" pathLength="1" x1="0" y1="0" x2="0" y2="0"></line>
+    </svg>
+  </div>
+
+  <section class="controls">
+    <label class="toggle">
+      <input type="checkbox" id="ai">
+      <span>Play vs computer (you are X)</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" id="mode">
+      <span>First board win ends the game</span>
+    </label>
+    <button id="reset">New round</button>
+    <button id="resetScore" class="ghost">Reset scores</button>
+  </section>
+
+  <p class="hint">Your move sends your opponent to the small board matching the cell you just played in. If that board is finished, they can play anywhere.</p>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  const G = 1.2; // grid gap in percent, must match #board gap
+
+  let cells, small, next, turn, over, winner, mode, lastMove, hot, metaLine;
+  let vsAI = false, busy = false, aiTimer = null;
+  let score = { X: 0, O: 0, draw: 0 };
+
+  function findLine(a) {
+    for (const L of LINES) {
+      const [i, j, k] = L;
+      if (a[i] && a[i] !== 'draw' && a[i] === a[j] && a[i] === a[k]) return L;
+    }
+    return null;
+  }
+
+  function playable(b) {
+    return !over && small[b] === '' && (next === -1 || next === b);
+  }
+
+  // Center of a big board in the 0-100 coordinate space used by the strike line.
+  function blockCenter(i) {
+    const cw = (100 - 2 * G) / 3;
+    const col = i % 3, row = Math.floor(i / 3);
+    return [col * (cw + G) + cw / 2, row * (cw + G) + cw / 2];
+  }
+
+  function newRound() {
+    cells = Array(81).fill('');
+    small = Array(9).fill('');
+    next = -1;
+    turn = 'X';
+    over = false;
+    winner = '';
+    lastMove = -1;
+    hot = new Set();
+    metaLine = null;
+    mode = $('mode').checked ? 'first' : 'standard';
+    clearTimeout(aiTimer);
+    busy = false;
+    vsAI = $('ai').checked;
+    render(false);
+  }
+
+  function play(c) {
+    const b = Math.floor(c / 9);
+    const p = c % 9;
+    if (busy || over || cells[c] || !playable(b)) return;
+
+    cells[c] = turn;
+    lastMove = c;
+
+    const sub = cells.slice(b * 9, b * 9 + 9);
+    const L = findLine(sub);
+    if (L) {
+      small[b] = sub[L[0]];
+      L.forEach(i => hot.add(b * 9 + i));
+    } else if (sub.every(Boolean)) {
+      small[b] = 'draw';
+    }
+
+    if (mode === 'first') {
+      if (L) { over = true; winner = small[b]; }
+    } else {
+      const ml = findLine(small);
+      if (ml) { over = true; winner = small[ml[0]]; metaLine = ml; }
+    }
+    if (!over && small.every(s => s !== '')) over = true;
+    if (over) score[winner || 'draw']++;
+
+    next = small[p] === '' ? p : -1;
+    turn = turn === 'X' ? 'O' : 'X';
+    if (vsAI && !over && turn === 'O') {
+      busy = true;
+      aiTimer = setTimeout(aiMove, 450);
+    }
+    render(true);
+  }
+
+  function renderScores() {
+    $('countX').textContent = `${score.X} ${score.X === 1 ? 'win' : 'wins'}`;
+    $('countO').textContent = `${score.O} ${score.O === 1 ? 'win' : 'wins'}`;
+    $('countD').textContent = score.draw;
+    $('cardO').querySelector('.name').textContent = vsAI ? 'Computer' : 'O';
+    $('cardX').classList.toggle('turn', !over && turn === 'X');
+    $('cardO').classList.toggle('turn', !over && turn === 'O');
+  }
+
+  function renderStatus() {
+    const el = $('status');
+    if (over) {
+      el.textContent = winner ? `${winner} wins the game!` : "It's a draw!";
+      el.className = '';
+    } else {
+      const where = next === -1 ? 'play in any open board' : 'play in the glowing board';
+      if (busy) { el.textContent = 'Computer is thinking…'; el.className = turn; return; }
+      el.textContent = `${turn}'s turn · ${where}`;
+      el.className = turn;
+    }
+  }
+
+  function renderStrike() {
+    const line = $('strikeLine');
+    line.classList.remove('on');
+    if (!metaLine) return;
+    const [x1, y1] = blockCenter(metaLine[0]);
+    const [x2, y2] = blockCenter(metaLine[2]);
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    void line.getBoundingClientRect(); // restart the draw animation
+    line.classList.add('on');
+  }
+
+  function render(animate) {
+    const board = $('board');
+    board.innerHTML = '';
+
+    for (let b = 0; b < 9; b++) {
+      const big = document.createElement('div');
+      big.className = 'big';
+      if (small[b] === 'X' || small[b] === 'O') big.classList.add('won-' + small[b]);
+      else if (small[b] === 'draw') big.classList.add('draw');
+      else if (playable(b)) big.classList.add('active');
+      else if (!over && small[b] === '') big.classList.add('dim');
+
+      for (let p = 0; p < 9; p++) {
+        const c = b * 9 + p;
+        const d = document.createElement('div');
+        let cls = 'cell';
+        if (cells[c] === 'X') cls += ' x';
+        else if (cells[c] === 'O') cls += ' o';
+        else cls += ' empty';
+        if (hot.has(c)) cls += ' win';
+        if (c === lastMove) cls += ' last' + (animate ? ' pop' : '');
+        d.className = cls;
+        d.textContent = cells[c];
+        if (!cells[c] && playable(b) && !busy) d.addEventListener('click', () => play(c));
+        big.appendChild(d);
+      }
+      board.appendChild(big);
+    }
+
+    renderStatus();
+    renderScores();
+    renderStrike();
+  }
+
+  // ---------- Computer opponent (plays O) ----------
+  const CELL_VALUE = [4, 2, 4, 2, 6, 2, 4, 2, 4];
+  const BOARD_VALUE = [2, 1, 2, 1, 4, 1, 2, 1, 2];
+
+  // Lines holding two of 'who' and one empty cell.
+  function twoInRows(arr, who) {
+    let n = 0;
+    for (const L of LINES) {
+      const t = L.map(i => arr[i]);
+      if (t.filter(v => v === who).length === 2 && t.includes('')) n++;
+    }
+    return n;
+  }
+
+  // ---------- Minimax search with alpha-beta pruning (computer plays O) ----------
+  const WIN = 1000000;
+  const SEARCH_MS = 1500;      // time budget per computer move
+  let sCells, sSmall, sNext, sTurn, sDeadline, sTimeUp;
+
+  // Terminal result of the search state: 'X', 'O', 'draw', or null if play continues.
+  function sResult() {
+    if (mode === 'first') {
+      for (let b = 0; b < 9; b++) if (sSmall[b] === 'X' || sSmall[b] === 'O') return sSmall[b];
+    } else {
+      const ml = findLine(sSmall);
+      if (ml) return sSmall[ml[0]];
+    }
+    if (sSmall.every(s => s !== '')) return 'draw';
+    return null;
+  }
+
+  function sMoves() {
+    const moves = [];
+    for (let b = 0; b < 9; b++) {
+      if (sSmall[b] !== '' || (sNext !== -1 && sNext !== b)) continue;
+      for (let p = 0; p < 9; p++) if (!sCells[b * 9 + p]) moves.push(b * 9 + p);
+    }
+    // Shuffle, then stable-sort so promising moves come first (better pruning) and ties are random.
+    for (let i = moves.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [moves[i], moves[j]] = [moves[j], moves[i]];
+    }
+    const order = c => CELL_VALUE[c % 9] + BOARD_VALUE[Math.floor(c / 9)];
+    moves.sort((x, y) => order(y) - order(x));
+    return moves;
+  }
+
+  function sPlay(c) {
+    const b = Math.floor(c / 9), p = c % 9;
+    const u = { c, b, prevSmall: sSmall[b], prevNext: sNext, prevTurn: sTurn };
+    sCells[c] = sTurn;
+    const sub = sCells.slice(b * 9, b * 9 + 9);
+    const L = findLine(sub);
+    sSmall[b] = L ? sub[L[0]] : (sub.every(Boolean) ? 'draw' : '');
+    sNext = sSmall[p] === '' ? p : -1;
+    sTurn = sTurn === 'X' ? 'O' : 'X';
+    return u;
+  }
+
+  function sUndo(u) {
+    sTurn = u.prevTurn;
+    sNext = u.prevNext;
+    sSmall[u.b] = u.prevSmall;
+    sCells[u.c] = '';
+  }
+
+  // Static score from O's point of view: positive favors the computer.
+  function evaluate() {
+    let s = 0;
+    for (let b = 0; b < 9; b++) {
+      if (sSmall[b] === 'O') s += 40 + BOARD_VALUE[b] * 15;
+      else if (sSmall[b] === 'X') s -= 40 + BOARD_VALUE[b] * 15;
+      else if (sSmall[b] === '') {
+        const arr = sCells.slice(b * 9, b * 9 + 9);
+        s += 6 * (twoInRows(arr, 'O') - twoInRows(arr, 'X'));
+        for (let p = 0; p < 9; p++) {
+          if (arr[p] === 'O') s += CELL_VALUE[p];
+          else if (arr[p] === 'X') s -= CELL_VALUE[p];
+        }
+      }
+    }
+    if (mode !== 'first') {
+      // Whole-board lines that are still open
+      for (const L of LINES) {
+        let o = 0, x = 0, dead = false;
+        for (const i of L) {
+          if (sSmall[i] === 'O') o++;
+          else if (sSmall[i] === 'X') x++;
+          else if (sSmall[i] === 'draw') dead = true;
+        }
+        if (dead || (o && x)) continue;
+        if (o === 2) s += 60; else if (o === 1) s += 8;
+        if (x === 2) s -= 60; else if (x === 1) s -= 8;
+      }
+    }
+    return s;
+  }
+
+  // Transposition table: remembers searched positions so transpositions aren't re-searched.
+  // Cleared before each computer move. flag: 0 = exact, 1 = lower bound, 2 = upper bound.
+  const tt = new Map();
+
+  function alphabeta(depth, alpha, beta, ply) {
+    if (performance.now() > sDeadline) sTimeUp = true;
+    if (sTimeUp) return 0;
+    const r = sResult();
+    if (r) return r === 'O' ? WIN - ply : r === 'X' ? ply - WIN : 0;
+    if (depth === 0) return evaluate();
+
+    const alphaOrig = alpha, betaOrig = beta;
+    const key = sCells.map(c => c || '.').join('') + sTurn + sNext;
+    const entry = tt.get(key);
+    let hashMove = -1;
+    if (entry) {
+      hashMove = entry.best;
+      if (entry.depth >= depth) {
+        if (entry.flag === 0) return entry.v;
+        if (entry.flag === 1 && entry.v >= beta) return entry.v;
+        if (entry.flag === 2 && entry.v <= alpha) return entry.v;
+      }
+    }
+
+    const moves = sMoves();
+    if (!moves.length) return evaluate();
+    // Try the move that was best last time first (better pruning)
+    const hi = moves.indexOf(hashMove);
+    if (hi > 0) { moves.splice(hi, 1); moves.unshift(hashMove); }
+
+    let best = -1, v;
+    if (sTurn === 'O') {
+      v = -Infinity;
+      for (const c of moves) {
+        const u = sPlay(c);
+        const score = alphabeta(depth - 1, alpha, beta, ply + 1);
+        sUndo(u);
+        if (sTimeUp) return 0;
+        if (score > v) { v = score; best = c; }
+        alpha = Math.max(alpha, v);
+        if (alpha >= beta) break;
+      }
+    } else {
+      v = Infinity;
+      for (const c of moves) {
+        const u = sPlay(c);
+        const score = alphabeta(depth - 1, alpha, beta, ply + 1);
+        sUndo(u);
+        if (sTimeUp) return 0;
+        if (score < v) { v = score; best = c; }
+        beta = Math.min(beta, v);
+        if (alpha >= beta) break;
+      }
+    }
+
+    const flag = v <= alphaOrig ? 2 : v >= betaOrig ? 1 : 0;
+    tt.set(key, { depth, v, flag, best });
+    return v;
+  }
+
+  // Iterative deepening: search deeper and deeper until the time budget runs out.
+  function minimaxMove() {
+    sCells = cells.slice();
+    sSmall = small.slice();
+    sNext = next;
+    sTurn = 'O';
+    sDeadline = performance.now() + SEARCH_MS;
+    tt.clear();
+
+    let order = sMoves();
+    let best = order[0];
+    for (let depth = 1; depth <= 12; depth++) {
+      sTimeUp = false;
+      let depthBest = null, bestVal = -Infinity;
+      for (const c of order) {
+        const u = sPlay(c);
+        const v = alphabeta(depth - 1, bestVal, Infinity, 1);
+        sUndo(u);
+        if (sTimeUp) break;
+        if (depthBest === null || v > bestVal) { bestVal = v; depthBest = c; }
+      }
+      if (sTimeUp) break;           // keep the result from the last fully finished depth
+      best = depthBest;
+      order = [best, ...order.filter(c => c !== best)];
+      if (bestVal >= WIN - 100) break; // forced win found, no need to search deeper
+    }
+    return best;
+  }
+
+  function aiMove() {
+    busy = false;
+    if (over || turn !== 'O') return;
+    const c = minimaxMove();
+    if (c !== undefined) play(c);
+  }
+
+  $('reset').addEventListener('click', newRound);
+  $('resetScore').addEventListener('click', () => {
+    score = { X: 0, O: 0, draw: 0 };
+    renderScores();
+  });
+  $('mode').addEventListener('change', newRound);
+  $('ai').addEventListener('change', newRound);
+
+  newRound();
+</script>
+</body>
+</html>
