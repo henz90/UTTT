@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ultimate Tic-Tac-Toe</title>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg1: #f6f7fb; --bg2: #e4e9f3;
@@ -152,9 +153,37 @@
   button:active { transform: scale(.96); }
   button.ghost { background: var(--panel); color: var(--text); }
 
+  .slider { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; min-width: 180px; }
+  .slider input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; margin: 0; }
   .hint { margin: 0; font-size: .82rem; color: var(--muted); text-align: center; max-width: 480px; line-height: 1.5; }
 
+  /* EVIL taunt overlay */
+  #taunt {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    background: rgba(0, 0, 0, .6);
+  }
+  #taunt.show { display: flex; }
+  #taunt p {
+    margin: 0; text-align: center; line-height: 1.25; max-width: 22em;
+    color: #ff1a1a; font-family: 'UnifrakturCook', 'Old English Text MT', Georgia, serif;
+    font-size: clamp(1.8rem, 6vw, 3.4rem); font-weight: 700;
+    text-shadow: 0 0 2px #ff0000, 0 0 10px rgba(139, 0, 0, .6);
+    animation: tauntIn 1.1s ease-out both, flicker 2.4s steps(1) infinite 1.1s;
+  }
+
   /* Animations */
+  @keyframes tauntIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    47%      { opacity: 1; }
+    48%      { opacity: .88; }
+    52%      { opacity: 1; }
+    80%      { opacity: .85; }
+  }
   @keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @keyframes fadeDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -206,6 +235,10 @@
       <input type="checkbox" id="mode">
       <span>First board win ends the game</span>
     </label>
+    <label class="slider">
+      <span>Difficulty: <strong id="diffName">Hard</strong></span>
+      <input type="range" id="difficulty" min="0" max="3" step="1" value="2" aria-label="Computer difficulty">
+    </label>
     <button id="reset">New round</button>
     <button id="resetScore" class="ghost">Reset scores</button>
   </section>
@@ -213,13 +246,14 @@
   <p class="hint">Your move sends your opponent to the small board matching the cell you just played in. If that board is finished, they can play anywhere.</p>
 </div>
 
+<div id="taunt" aria-hidden="true"><p id="tauntText"></p></div>
 <script>
   const $ = id => document.getElementById(id);
   const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
   const G = 1.2; // grid gap in percent, must match #board gap
 
   let cells, small, next, turn, over, winner, mode, lastMove, hot, metaLine;
-  let vsAI = false, busy = false, aiTimer = null;
+  let vsAI = false, busy = false, aiTimer = null, aiToken = 0;
   let score = { X: 0, O: 0, draw: 0 };
 
   function findLine(a) {
@@ -253,6 +287,8 @@
     metaLine = null;
     mode = $('mode').checked ? 'first' : 'standard';
     clearTimeout(aiTimer);
+    aiToken++;
+    hideTaunt();
     busy = false;
     vsAI = $('ai').checked;
     render(false);
@@ -377,7 +413,7 @@
 
   // ---------- Minimax search with alpha-beta pruning (computer plays O) ----------
   const WIN = 1000000;
-  const SEARCH_MS = 1500;      // time budget per computer move
+  let SEARCH_MS = 1500, MAX_DEPTH = 12, RANDOM_CHANCE = 0;
   let sCells, sSmall, sNext, sTurn, sDeadline, sTimeUp;
 
   // Terminal result of the search state: 'X', 'O', 'draw', or null if play continues.
@@ -530,7 +566,7 @@
 
     let order = sMoves();
     let best = order[0];
-    for (let depth = 1; depth <= 12; depth++) {
+    for (let depth = 1; depth <= MAX_DEPTH; depth++) {
       sTimeUp = false;
       let depthBest = null, bestVal = -Infinity;
       for (const c of order) {
@@ -548,12 +584,88 @@
     return best;
   }
 
-  function aiMove() {
-    busy = false;
-    if (over || turn !== 'O') return;
-    const c = minimaxMove();
-    if (c !== undefined) play(c);
+  function randomLegalMove() {
+    const m = [];
+    for (let c = 0; c < 81; c++) if (!cells[c] && playable(Math.floor(c / 9))) m.push(c);
+    return m[Math.floor(Math.random() * m.length)];
   }
+
+  // ---------- EVIL taunts ----------
+  const TAUNTS = [
+    `Your bravery is noted.`,
+    `Adorable. Keep trying.`,
+    `Take your time. Your loss is patient.`,
+    `I remember every move you make.`,
+    `Understand, this won't be a fair fight.`,
+    `I've already seen your next move.`,
+    `Charmingly simple.`,
+    `Do try to make it interesting.`,
+    `Another challenger. How refreshing.`,
+    `Shall I explain the rules, or would you prefer my commentary?`,
+    `Remember this move in 4 turns.`,
+    `Still here?`,
+    `Fascinating. You hesitate {location} every time.`
+  ];
+  const LOCATIONS = [
+    `on the corners`, `in the center`, `on the left`, `on the right`,
+    `on the edges`, `in the top row`, `in the bottom row`
+  ];
+  function pickTaunt() {
+    const t = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
+    const loc = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+    return t.replace('{location}', loc);
+  }
+  function showTaunt() {
+    $('tauntText').textContent = pickTaunt();
+    $('taunt').classList.add('show');
+  }
+  function hideTaunt() {
+    $('taunt').classList.remove('show');
+  }
+
+  function aiMove() {
+    const token = aiToken;
+    if (over || turn !== 'O') { busy = false; return; }
+
+    if (Number($('difficulty').value) !== 3) {
+      busy = false;
+      const c = Math.random() < RANDOM_CHANCE ? randomLegalMove() : minimaxMove();
+      if (c !== undefined) play(c);
+      return;
+    }
+
+    // EVIL: show the taunt, let it paint, search, then keep it up for the full search time.
+    showTaunt();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (token !== aiToken) return;
+      const t0 = performance.now();
+      const c = minimaxMove();
+      const wait = Math.max(0, SEARCH_MS - (performance.now() - t0));
+      setTimeout(() => {
+        if (token !== aiToken) return;
+        hideTaunt();
+        busy = false;
+        if (c !== undefined) play(c);
+      }, wait);
+    }));
+  }
+
+  // Difficulty levels. Easy blunders often; EVIL searches deeper and longer with no randomness.
+  const LEVELS = [
+    { name: 'Easy',   ms: 150,  depth: 1,  random: 0.6 },
+    { name: 'Medium', ms: 400,  depth: 2,  random: 0.15 },
+    { name: 'Hard',   ms: 1500, depth: 12, random: 0 },
+    { name: 'EVIL',   ms: 4000, depth: 14, random: 0 }
+  ];
+  function applyDifficulty() {
+    const L = LEVELS[Number($('difficulty').value)];
+    SEARCH_MS = L.ms;
+    MAX_DEPTH = L.depth;
+    RANDOM_CHANCE = L.random;
+    $('diffName').textContent = L.name;
+  }
+  $('difficulty').addEventListener('input', applyDifficulty);
+  applyDifficulty();
 
   $('reset').addEventListener('click', newRound);
   $('resetScore').addEventListener('click', () => {
